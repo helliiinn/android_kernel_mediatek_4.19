@@ -34,18 +34,14 @@ config CC_HAS_AUTO_VAR_INIT_ZERO_ENABLER
 config CC_HAS_AUTO_VAR_INIT_ZERO
 	def_bool CC_HAS_AUTO_VAR_INIT_ZERO_BARE || CC_HAS_AUTO_VAR_INIT_ZERO_ENABLER
 
-choice
-	prompt "Initialize kernel stack variables at function entry"
-	default GCC_PLUGIN_STRUCTLEAK_BYREF_ALL if COMPILE_TEST && GCC_PLUGINS
-	default INIT_STACK_ALL_PATTERN if COMPILE_TEST && CC_HAS_AUTO_VAR_INIT_PATTERN
-	default INIT_STACK_NONE
+config INIT_STACK_NONE
+	bool "no automatic initialization (weakest)"
+	default y
 	help
-	  This option enables initialization of stack variables at
-	  function entry time. This has the possibility to have the
-	  greatest coverage (since all functions can have their
-	  variables initialized), but the performance impact depends
-	  on the function calling complexity of a given workload's
-	  syscalls.
+	  Disable automatic stack variable initialization.
+	  This leaves the kernel vulnerable to the standard
+	  classes of uninitialized stack variable exploits
+	  and information exposures.
 
 	  This chooses the level of coverage over classes of potentially
 	  uninitialized variables. The selected class of variable will be
@@ -53,6 +49,7 @@ choice
 
 	config INIT_STACK_NONE
 		bool "no automatic stack variable initialization (weakest)"
+    	default y
 		help
 		  Disable automatic stack variable initialization.
 		  This leaves the kernel vulnerable to the standard
