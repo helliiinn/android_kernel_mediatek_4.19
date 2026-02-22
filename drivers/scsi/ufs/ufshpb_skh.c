@@ -1249,6 +1249,8 @@ void skhpb_rsp_upiu(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 		return;
 	}
 
+	memcpy(&sense_data, &lrbp->ucd_rsp_ptr->sr.sense_data_len,
+		sizeof(struct skhpb_rsp_field));
 	rsp_field = skhpb_get_hpb_rsp(lrbp);
 
 	if ((get_unaligned_be16(rsp_field->sense_data_len + 0)
@@ -1967,6 +1969,8 @@ static void skhpb_init_lu_constant(struct skhpb_lu *hpb,
 	SKHPB_DRIVER_I("===================================\n");
 }
 
+extern int ufsplus_hpb_status;
+
 static int skhpb_lu_hpb_init(struct ufs_hba *hba, struct skhpb_lu *hpb,
 		struct skhpb_func_desc *func_desc,
 		struct skhpb_lu_desc *lu_desc, int lun,
@@ -1993,7 +1997,9 @@ static int skhpb_lu_hpb_init(struct ufs_hba *hba, struct skhpb_lu *hpb,
 	INIT_LIST_HEAD(&hpb->lh_map_ctx);
 
 	hpb->lu_hpb_enable = true;
-
+	ufsplus_hpb_status=1;
+	SKHPB_DRIVER_I("ufsplus_hpb_status = %d\n",
+	ufsplus_hpb_status);
 	skhpb_init_lu_constant(hpb, lu_desc, func_desc);
 
 	hpb->region_tbl = vzalloc(sizeof(struct skhpb_region) *	hpb->regions_per_lu);
@@ -2574,7 +2580,7 @@ void skhpb_suspend(struct ufs_hba *hba)
 				spin_unlock_irqrestore(&hpb->rsp_list_lock, flags);
 			}
 			while (1) {
-				spin_lock_bh(&hpb->map_list_lock);
+				spin_lock_irqsave(&hpb->map_list_lock, flags);
 				map_req = list_first_entry_or_null(&hpb->lh_map_req_retry,
 												   struct skhpb_map_req, list_map_req);
 				if (!map_req) {
