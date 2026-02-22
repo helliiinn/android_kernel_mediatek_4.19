@@ -106,8 +106,6 @@ config INIT_STACK_NONE
 		  suitable as a production security mitigation than pattern
 		  initialization.
 
-endchoice
-
 config GCC_PLUGIN_STRUCTLEAK_VERBOSE
 	bool "Report forcefully initialized variables"
 	depends on GCC_PLUGIN_STRUCTLEAK
