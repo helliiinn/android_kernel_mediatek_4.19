@@ -4528,6 +4528,7 @@ static kal_uint32 set_test_pattern_mode(kal_uint32 modes,
 	return ERROR_NONE;
 }
 
+<<<<<<< HEAD
 static kal_uint32 get_sensor_temperature(void)
 {
 	UINT8 temperature;
@@ -4550,6 +4551,8 @@ static kal_uint32 get_sensor_temperature(void)
 	return temperature_convert;
 }
 
+=======
+>>>>>>> 840432dc810e (drivers: mediatek: imgsensor: Import minimal OEM changes)
 static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 				 UINT8 *feature_para, UINT32 *feature_para_len)
 {

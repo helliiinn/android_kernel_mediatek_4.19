@@ -33,12 +33,15 @@ static const int regulator_voltage[] = {
 
 struct REGULATOR_CTRL regulator_control[REGULATOR_TYPE_MAX_NUM] = {
 	{"vcama"},
+<<<<<<< HEAD
 #ifdef CONFIG_REGULATOR_RT5133
 	{"vcama1"},
 #endif
 #if defined(IMGSENSOR_MT6781) || defined(IMGSENSOR_MT6877)
 	{"vcamaf"},
 #endif
+=======
+>>>>>>> 840432dc810e (drivers: mediatek: imgsensor: Import minimal OEM changes)
 	{"vcamd"},
 	{"vcamio"},
 	#ifdef OPLUS_FEATURE_CAMERA_COMMON
