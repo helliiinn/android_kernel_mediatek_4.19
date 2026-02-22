@@ -634,13 +634,6 @@ static int get_hw_btsmdpa_temp(void)
 		return ret;
 	}
 	ret = iio_read_channel_processed(thermistor_ch1, &val);
-	mtkts_btsmdpa_dprintk("%s val=%d\n", __func__, val);
-
-	if (ret < 0) {
-		mtkts_btsmdpa_printk("IIO channel read failed %d\n", ret);
-		return ret;
-	}
-	ret = iio_read_channel_processed(thermistor_ch1, &val);
 #ifndef CONFIG_OPLUS_TEMP_NTC
 	if (!is_kthread_get_adc()) {
 		ret = iio_read_channel_processed(thermistor_ch1, &val);
