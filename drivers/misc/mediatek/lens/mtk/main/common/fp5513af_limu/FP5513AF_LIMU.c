@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ * Copyright (c) 2019 MediaTek Inc.
  */
 
+
+
 /*
- * GT9772AF voice coil motor driver
+ * FP5513AF_LIMU voice coil motor driver
  *
  *
  */
@@ -11,12 +14,11 @@
 #include <linux/delay.h>
 #include <linux/fs.h>
 #include <linux/i2c.h>
-#include <linux/time.h>
 #include <linux/uaccess.h>
 
 #include "lens_info.h"
 
-#define AF_DRVNAME "GT9772AF_DRV"
+#define AF_DRVNAME "FP5513AF_DRV_LIMU"
 #define AF_I2C_SLAVE_ADDR 0x18
 
 #define AF_DEBUG
@@ -27,7 +29,6 @@
 #define LOG_INF(format, args...)
 #endif
 
-
 static struct i2c_client *g_pstAF_I2Cclient;
 static int *g_pAF_Opened;
 static spinlock_t *g_pAF_SpinLock;
@@ -35,69 +36,27 @@ static spinlock_t *g_pAF_SpinLock;
 static unsigned long g_u4AF_INF;
 static unsigned long g_u4AF_MACRO = 1023;
 static unsigned long g_u4CurrPosition;
-#define Min_Pos 0
-#define Max_Pos 1023
 
-static int s4AF_ReadReg(u8 a_uAddr, u8 *a_uData)
+
+static int s4AF_WriteReg(u16 a_u2Data)
 {
-	g_pstAF_I2Cclient->addr = (AF_I2C_SLAVE_ADDR) >> 1;
+	int i4RetValue = 0;
 
-	if (i2c_master_send(g_pstAF_I2Cclient, &a_uAddr, 1) < 0) {
-		LOG_INF("ReadI2C send failed!!\n");
+	char puSendCmd[2] = {(char)(a_u2Data >> 4),
+			     (char)((a_u2Data & 0xF) << 4)};
+
+	g_pstAF_I2Cclient->addr = AF_I2C_SLAVE_ADDR;
+
+	g_pstAF_I2Cclient->addr = g_pstAF_I2Cclient->addr >> 1;
+
+	i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd, 2);
+
+	if (i4RetValue < 0) {
+		LOG_INF("I2C send failed!!\n");
 		return -1;
-	}
-
-	if (i2c_master_recv(g_pstAF_I2Cclient, a_uData, 1) < 0) {
-		LOG_INF("ReadI2C recv failed!!\n");
-		return -1;
-	}
-
-
-	return 0;
-}
-
-static int s4AF_WriteReg(u8 a_uLength, u8 a_uAddr, u16 a_u2Data)
-{
-	u8 puSendCmd[2] = {a_uAddr, (u8)(a_u2Data & 0xFF)};
-	u8 puSendCmd2[3] = {a_uAddr, (u8)((a_u2Data >> 8) & 0xFF),
-			    (u8)(a_u2Data & 0xFF)};
-
-	g_pstAF_I2Cclient->addr = (AF_I2C_SLAVE_ADDR) >> 1;
-
-
-	if (a_uLength == 0) {
-		if (i2c_master_send(g_pstAF_I2Cclient, puSendCmd, 2) < 0) {
-			LOG_INF("WriteI2C failed!!\n");
-			return -1;
-		}
-	} else if (a_uLength == 1) {
-		if (i2c_master_send(g_pstAF_I2Cclient, puSendCmd2, 3) < 0) {
-			LOG_INF("WriteI2C 2 failed!!\n");
-			return -1;
-		}
 	}
 
 	return 0;
-}
-
-static int setPosition(unsigned short UsPosition)
-{
-	unsigned short TarPos;
-	unsigned char UcPosH;
-	unsigned char UcPosL;
-	unsigned int i4RetValue = 0;
-
-	TarPos = UsPosition;
-
-
-	UcPosH = (unsigned char)((TarPos >> 8) & 0x03);
-	UcPosL = (unsigned char)(TarPos & 0x00FF);
-	i4RetValue = s4AF_WriteReg(0, 0x03, UcPosH);//VCM_MSB
-	if (i4RetValue != 0)
-		return -1;
-	i4RetValue = s4AF_WriteReg(0, 0x04, UcPosL); //VCM_LSB
-
-	return i4RetValue;
 }
 
 static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
@@ -126,30 +85,52 @@ static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
 /* initAF include driver initialization and standby mode */
 static int initAF(void)
 {
+	LOG_INF("+\n");
 
 	if (*g_pAF_Opened == 1) {
 
-		int ret = 0;
-		int SDC_C_ret = 0;
-		int PRESC_ret = 0;
-		int SDTC_ret  = 0;
+		int i4RetValue;
+		char puSendCmd1[2] = {(char)(0x80), (char)(0x00)};
+		char puSendCmd2[2] = {(char)(0x00), (char)(0x00)};
+		char puSendCmd3[2] = {(char)(0xEC), (char)(0xA3)};
+		char puSendCmd4[2] = {(char)(0xA1), (char)(0x15)};
+		char puSendCmd5[2] = {(char)(0xF2), (char)(0x00)};
+		char puSendCmd6[2] = {(char)(0xDC), (char)(0x51)};
+		/* char puSendCmd7[2] = {(char)(0x3F), (char)(0xF0)}; */
 
-		unsigned char Temp;
+		g_pstAF_I2Cclient->addr = AF_I2C_SLAVE_ADDR;
+		g_pstAF_I2Cclient->addr = g_pstAF_I2Cclient->addr >> 1;
 
-		s4AF_ReadReg(0x00, &Temp);  //ic info
-		LOG_INF("GT Check HW version: %x\n", Temp); //should be 0xF2
-		ret = s4AF_WriteReg(0, 0xED, 0xAB); //advance mode
-		SDC_C_ret = s4AF_WriteReg(0, 0x06, 0x88); //SDC enable and SDC_C set
-		PRESC_ret = s4AF_WriteReg(0, 0x07, 0x01); //PRESC[1:0]=01
-		SDTC_ret = s4AF_WriteReg(0, 0x08, 0x49); //SDTC[6:0]=1001001
-		LOG_INF("Advance mode ret: %x SDC_C ret: %x PRESC ret: %x SDTC ret: %x\n", ret,SDC_C_ret,PRESC_ret,SDTC_ret);
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd1, 2);
+		if (i4RetValue < 0)
+			LOG_INF(" puSendCmd1 send failed.\n");
+
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd2, 2);
+		if (i4RetValue < 0)
+			LOG_INF(" puSendCmd2 send failed.\n");
+
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd3, 2);
+		if (i4RetValue < 0)
+			LOG_INF(" puSendCmd3 send failed.\n");
+
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd4, 2);
+		if (i4RetValue < 0)
+			LOG_INF(" puSendCmd4 send failed.\n");
+
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd5, 2);
+		if (i4RetValue < 0)
+			LOG_INF(" puSendCmd5 send failed.\n");
+
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd6, 2);
+		if (i4RetValue < 0)
+			LOG_INF(" puSendCmd6 send failed.\n");
 
 		spin_lock(g_pAF_SpinLock);
 		*g_pAF_Opened = 2;
 		spin_unlock(g_pAF_SpinLock);
 	}
 
-	LOG_INF(" -\n");
+	LOG_INF("-\n");
 
 	return 0;
 }
@@ -157,10 +138,9 @@ static int initAF(void)
 /* moveAF only use to control moving the motor */
 static inline int moveAF(unsigned long a_u4Position)
 {
-
 	int ret = 0;
 
-	if (setPosition((unsigned short)a_u4Position) == 0) {
+	if (s4AF_WriteReg((unsigned short)a_u4Position) == 0) {
 		g_u4CurrPosition = a_u4Position;
 		ret = 0;
 	} else {
@@ -176,7 +156,6 @@ static inline int setAFInf(unsigned long a_u4Position)
 	spin_lock(g_pAF_SpinLock);
 	g_u4AF_INF = a_u4Position;
 	spin_unlock(g_pAF_SpinLock);
-
 	return 0;
 }
 
@@ -185,13 +164,12 @@ static inline int setAFMacro(unsigned long a_u4Position)
 	spin_lock(g_pAF_SpinLock);
 	g_u4AF_MACRO = a_u4Position;
 	spin_unlock(g_pAF_SpinLock);
-
 	return 0;
 }
 
 /* ////////////////////////////////////////////////////////////// */
-long GT9772AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
-		      unsigned long a_u4Param)
+long FP5513AF_LIMU_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
+		    unsigned long a_u4Param)
 {
 	long i4RetValue = 0;
 
@@ -227,19 +205,24 @@ long GT9772AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
 /* 2.Shut down the device on last close. */
 /* 3.Only called once on last time. */
 /* Q1 : Try release multiple times. */
-int GT9772AF_Release(struct inode *a_pstInode, struct file *a_pstFile)
+int FP5513AF_LIMU_Release(struct inode *a_pstInode, struct file *a_pstFile)
 {
-	int Ret = 0;
-
+	unsigned long currPosition = g_u4CurrPosition;
 	LOG_INF("Start\n");
-
 	if (*g_pAF_Opened == 2) {
-		setPosition(300);
-		mdelay(15);
-		s4AF_WriteReg(0, 0x06, 0x8A);
-		setPosition(0);
-		mdelay(30);
-		LOG_INF("apply\n");
+		LOG_INF("Wait\n");
+	    if (currPosition > 400) {
+            s4AF_WriteReg(400);
+            mdelay(12);
+            currPosition = 400;
+        }
+
+        while (currPosition > 100) {
+            currPosition -= 50;
+            s4AF_WriteReg((unsigned short)currPosition);
+            mdelay(7);
+        }
+		s4AF_WriteReg(0x80); /* Power down mode */
 	}
 
 	if (*g_pAF_Opened) {
@@ -252,47 +235,29 @@ int GT9772AF_Release(struct inode *a_pstInode, struct file *a_pstFile)
 
 	LOG_INF("End\n");
 
-	return Ret;
-}
-
-int GT9772AF_PowerDown(struct i2c_client *pstAF_I2Cclient,
-			int *pAF_Opened)
-{
-	g_pstAF_I2Cclient = pstAF_I2Cclient;
-	g_pAF_Opened = pAF_Opened;
-
-	LOG_INF(" +\n");
-	if (*g_pAF_Opened == 0) {
-		LOG_INF("Set power donw +\n");
-		LOG_INF("Set power donw -\n");
-	}
-	LOG_INF(" -\n");
-
 	return 0;
 }
 
-int GT9772AF_SetI2Cclient(struct i2c_client *pstAF_I2Cclient,
-			    spinlock_t *pAF_SpinLock, int *pAF_Opened)
+int FP5513AF_LIMU_SetI2Cclient(struct i2c_client *pstAF_I2Cclient,
+			  spinlock_t *pAF_SpinLock, int *pAF_Opened)
 {
 	g_pstAF_I2Cclient = pstAF_I2Cclient;
 	g_pAF_SpinLock = pAF_SpinLock;
 	g_pAF_Opened = pAF_Opened;
+
 	initAF();
 
 	return 1;
 }
 
-int GT9772AF_GetFileName(unsigned char *pFileName)
+int FP5513AF_LIMU_GetFileName(unsigned char *pFileName)
 {
 	#if SUPPORT_GETTING_LENS_FOLDER_NAME
 	char FilePath[256];
-	char *FileString = NULL;
+	char *FileString;
 
-	if (snprintf(FilePath, sizeof(FilePath), "%s", __FILE__) < 0)
-		return 0;
+	sprintf(FilePath, "%s", __FILE__);
 	FileString = strrchr(FilePath, '/');
-	if (FileString == NULL)
-		return 0;
 	*FileString = '\0';
 	FileString = (strrchr(FilePath, '/') + 1);
 	strncpy(pFileName, FileString, AF_MOTOR_NAME);

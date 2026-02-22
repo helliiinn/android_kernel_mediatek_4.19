@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ * Copyright (c) 2019 MediaTek Inc.
  */
 
+
 /*
- * GT9772AF voice coil motor driver
+ * GT9764AFII voice coil motor driver
  *
  *
  */
@@ -16,7 +18,7 @@
 
 #include "lens_info.h"
 
-#define AF_DRVNAME "GT9772AF_DRV"
+#define AF_DRVNAME "GT9764AFII_DRV"
 #define AF_I2C_SLAVE_ADDR 0x18
 
 #define AF_DEBUG
@@ -33,6 +35,7 @@ static int *g_pAF_Opened;
 static spinlock_t *g_pAF_SpinLock;
 
 static unsigned long g_u4AF_INF;
+static unsigned long g_u4AF_SetInitPos;
 static unsigned long g_u4AF_MACRO = 1023;
 static unsigned long g_u4CurrPosition;
 #define Min_Pos 0
@@ -52,6 +55,7 @@ static int s4AF_ReadReg(u8 a_uAddr, u8 *a_uData)
 		return -1;
 	}
 
+	/* LOG_INF("RDI2C 0x%x, 0x%x\n", a_uAddr, *a_uData); */
 
 	return 0;
 }
@@ -64,6 +68,7 @@ static int s4AF_WriteReg(u8 a_uLength, u8 a_uAddr, u16 a_u2Data)
 
 	g_pstAF_I2Cclient->addr = (AF_I2C_SLAVE_ADDR) >> 1;
 
+	/* LOG_INF("WRI2C 0x%04x, 0x%x\n", a_uAddr, a_u2Data); */
 
 	if (a_uLength == 0) {
 		if (i2c_master_send(g_pstAF_I2Cclient, puSendCmd, 2) < 0) {
@@ -89,6 +94,8 @@ static int setPosition(unsigned short UsPosition)
 
 	TarPos = UsPosition;
 
+	/* LOG_INF("DAC(%04d) -> %03x\n", UsPosition, TarPos); */
+	LOG_INF("setPosition g_u4CurrPosition%d\n" ,UsPosition);
 
 	UcPosH = (unsigned char)((TarPos >> 8) & 0x03);
 	UcPosL = (unsigned char)(TarPos & 0x00FF);
@@ -126,30 +133,33 @@ static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
 /* initAF include driver initialization and standby mode */
 static int initAF(void)
 {
+	LOG_INF("+\n");
+
+	//wait driver ic ready
+	mdelay(5);
+	g_u4AF_SetInitPos = 1;
 
 	if (*g_pAF_Opened == 1) {
 
+		//int i4RetValue = 0;
 		int ret = 0;
-		int SDC_C_ret = 0;
-		int PRESC_ret = 0;
-		int SDTC_ret  = 0;
-
+		//int cnt = 0;
 		unsigned char Temp;
 
 		s4AF_ReadReg(0x00, &Temp);  //ic info
-		LOG_INF("GT Check HW version: %x\n", Temp); //should be 0xF2
-		ret = s4AF_WriteReg(0, 0xED, 0xAB); //advance mode
-		SDC_C_ret = s4AF_WriteReg(0, 0x06, 0x88); //SDC enable and SDC_C set
-		PRESC_ret = s4AF_WriteReg(0, 0x07, 0x01); //PRESC[1:0]=01
-		SDTC_ret = s4AF_WriteReg(0, 0x08, 0x49); //SDTC[6:0]=1001001
-		LOG_INF("Advance mode ret: %x SDC_C ret: %x PRESC ret: %x SDTC ret: %x\n", ret,SDC_C_ret,PRESC_ret,SDTC_ret);
+		LOG_INF("Check HW version: 0x00 is %x\n", Temp);
+		ret = s4AF_WriteReg(0, 0x02, 0x00);
+		msleep(1);
+		ret = s4AF_WriteReg(0, 0x02, 0x02);
+		ret = s4AF_WriteReg(0, 0x06, 0x40);
+		ret = s4AF_WriteReg(0, 0x07, 0x0C);
 
 		spin_lock(g_pAF_SpinLock);
 		*g_pAF_Opened = 2;
 		spin_unlock(g_pAF_SpinLock);
 	}
 
-	LOG_INF(" -\n");
+	LOG_INF("-\n");
 
 	return 0;
 }
@@ -157,8 +167,17 @@ static int initAF(void)
 /* moveAF only use to control moving the motor */
 static inline int moveAF(unsigned long a_u4Position)
 {
-
 	int ret = 0;
+	LOG_INF("moveAF a_u4Position%d\n" ,a_u4Position);
+	if (g_u4AF_SetInitPos == 1) {
+		if (a_u4Position < 512) {
+			setPosition(430);
+			msleep(8);
+			setPosition(400);
+			msleep(8);
+		}
+		g_u4AF_SetInitPos = 0;
+	}
 
 	if (setPosition((unsigned short)a_u4Position) == 0) {
 		g_u4CurrPosition = a_u4Position;
@@ -190,7 +209,7 @@ static inline int setAFMacro(unsigned long a_u4Position)
 }
 
 /* ////////////////////////////////////////////////////////////// */
-long GT9772AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
+long GT9764AFII_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
 		      unsigned long a_u4Param)
 {
 	long i4RetValue = 0;
@@ -227,20 +246,11 @@ long GT9772AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
 /* 2.Shut down the device on last close. */
 /* 3.Only called once on last time. */
 /* Q1 : Try release multiple times. */
-int GT9772AF_Release(struct inode *a_pstInode, struct file *a_pstFile)
+int GT9764AFII_Release(struct inode *a_pstInode, struct file *a_pstFile)
 {
 	int Ret = 0;
 
 	LOG_INF("Start\n");
-
-	if (*g_pAF_Opened == 2) {
-		setPosition(300);
-		mdelay(15);
-		s4AF_WriteReg(0, 0x06, 0x8A);
-		setPosition(0);
-		mdelay(30);
-		LOG_INF("apply\n");
-	}
 
 	if (*g_pAF_Opened) {
 		LOG_INF("Free\n");
@@ -255,44 +265,42 @@ int GT9772AF_Release(struct inode *a_pstInode, struct file *a_pstFile)
 	return Ret;
 }
 
-int GT9772AF_PowerDown(struct i2c_client *pstAF_I2Cclient,
+int GT9764AFII_PowerDown(struct i2c_client *pstAF_I2Cclient,
 			int *pAF_Opened)
 {
 	g_pstAF_I2Cclient = pstAF_I2Cclient;
 	g_pAF_Opened = pAF_Opened;
 
-	LOG_INF(" +\n");
+	LOG_INF("+\n");
 	if (*g_pAF_Opened == 0) {
 		LOG_INF("Set power donw +\n");
 		LOG_INF("Set power donw -\n");
 	}
-	LOG_INF(" -\n");
+	LOG_INF("-\n");
 
 	return 0;
 }
 
-int GT9772AF_SetI2Cclient(struct i2c_client *pstAF_I2Cclient,
+int GT9764AFII_SetI2Cclient(struct i2c_client *pstAF_I2Cclient,
 			    spinlock_t *pAF_SpinLock, int *pAF_Opened)
 {
 	g_pstAF_I2Cclient = pstAF_I2Cclient;
 	g_pAF_SpinLock = pAF_SpinLock;
 	g_pAF_Opened = pAF_Opened;
+
 	initAF();
 
 	return 1;
 }
 
-int GT9772AF_GetFileName(unsigned char *pFileName)
+int GT9764AFII_GetFileName(unsigned char *pFileName)
 {
 	#if SUPPORT_GETTING_LENS_FOLDER_NAME
 	char FilePath[256];
-	char *FileString = NULL;
+	char *FileString;
 
-	if (snprintf(FilePath, sizeof(FilePath), "%s", __FILE__) < 0)
-		return 0;
+	sprintf(FilePath, "%s", __FILE__);
 	FileString = strrchr(FilePath, '/');
-	if (FileString == NULL)
-		return 0;
 	*FileString = '\0';
 	FileString = (strrchr(FilePath, '/') + 1);
 	strncpy(pFileName, FileString, AF_MOTOR_NAME);

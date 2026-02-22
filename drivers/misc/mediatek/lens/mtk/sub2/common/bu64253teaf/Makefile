@@ -15,5 +15,6 @@
 # Makefile for misc devices that really don't fit anywhere else.
 #
 
-obj-y += GT9764AF.o
+obj-y += BU64253TEAF.o
+
 
